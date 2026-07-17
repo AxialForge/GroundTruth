@@ -423,6 +423,8 @@ async function testApi(btnId, outId){
     h+=`<span class="ln ${j.ok?"ok":"bad"}">${j.ok?"✔":"✘"} Judge <b>${esc(j.model||"")}</b> + web search`+
        (j.ok?` — ${j.latency_ms} ms, ${j.searched} search${j.searched===1?"":"es"}`:` — ${esc(j.error||"failed")}`)+`</span>`;
     if(j.ok && j.reply) h+=`<span class="ln reply">“${esc(j.reply)}”</span>`;
+    if(j.dropped_domains && j.dropped_domains.length)
+      h+=`<span class="ln">Auto-removed ${j.dropped_domains.length} unreachable domain(s) from the allowlist &amp; saved: ${esc(j.dropped_domains.join(", "))}</span>`;
     h+=`<span class="ln">Key source: ${esc(r.key_source||"?")}</span>`;
     out.innerHTML=h;
   }catch(e){ out.innerHTML=`<span class="ln bad">✘ ${esc(String(e))}</span>`; }

@@ -411,29 +411,46 @@ def test_anthropic():
     except Exception as e:
         out["classifier"] = {"ok": False, "model": config.classifier_model, "error": _short_err(e)}
 
-    # 2) judge model + web_search + allowlist (the feature that actually matters)
+    # 2) judge model + web_search + allowlist (the feature that actually matters).
+    #    Heals the allowlist: drop any domains the crawler can't reach, retry, and
+    #    persist the cleaned list so live runs never hit the same error.
     t = time.time()
     try:
-        from ddld.factcheck.anthropic_judge import dedupe_domains
-        tool = {"type": config.web_search_tool_version, "name": "web_search", "max_uses": 1}
+        from ddld.factcheck.anthropic_judge import dedupe_domains, parse_inaccessible_domains
         domains = dedupe_domains(config.credible_domains)
-        if domains:
-            tool["allowed_domains"] = domains
-        msgs = [{"role": "user", "content":
-                 "Use web search to find the current U.S. unemployment rate, then reply in one short sentence with the number and its source."}]
-        r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)
-        guard = 0
-        while getattr(r, "stop_reason", "") == "pause_turn" and guard < 3:
-            msgs.append({"role": "assistant", "content": r.content})
-            r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)
-            guard += 1
+        dropped: list = []
+        r = None
+        for _ in range(4):
+            tool = {"type": config.web_search_tool_version, "name": "web_search", "max_uses": 1}
+            if domains:
+                tool["allowed_domains"] = domains
+            msgs = [{"role": "user", "content":
+                     "Use web search to find the current U.S. unemployment rate, then reply in one short sentence with the number and its source."}]
+            try:
+                r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)
+                guard = 0
+                while getattr(r, "stop_reason", "") == "pause_turn" and guard < 3:
+                    msgs.append({"role": "assistant", "content": r.content})
+                    r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)
+                    guard += 1
+                break
+            except Exception as e:
+                bad = parse_inaccessible_domains(str(e))
+                if bad and domains:
+                    dropped += [d for d in bad if d in domains]
+                    domains = [d for d in domains if d not in bad]
+                    continue
+                raise
+        if dropped:
+            store.update_and_persist(config, {"credible_domains": domains})  # remember the healed list
         searched = 0
         st = getattr(getattr(r, "usage", None), "server_tool_use", None)
         if st is not None:
             searched = int(getattr(st, "web_search_requests", 0) or 0)
         reply = "".join(b.text for b in r.content if getattr(b, "type", "") == "text").strip()
         out["judge"] = {"ok": True, "latency_ms": int((time.time() - t) * 1000),
-                        "model": config.judge_model, "searched": searched, "reply": reply[:200]}
+                        "model": config.judge_model, "searched": searched, "reply": reply[:200],
+                        "dropped_domains": dropped}
     except Exception as e:
         out["judge"] = {"ok": False, "model": config.judge_model, "error": _short_err(e)}
 

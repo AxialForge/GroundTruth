@@ -15,6 +15,7 @@ Two safety layers:
 from __future__ import annotations
 
 import json
+import re
 import time
 from urllib.parse import urlparse
 
@@ -36,22 +37,35 @@ def dedupe_domains(domains) -> list:
     return out
 
 
+# The web_search tool 400s if allowed_domains contains a site its crawler can't
+# reach (paywalled / bot-blocked outlets), naming them in the error. We parse
+# that, drop them, and retry — so the allowlist self-heals to what actually works.
+_INACCESSIBLE_RE = re.compile(r"not accessible to our user agent:\s*\[([^\]]*)\]", re.IGNORECASE)
+
+
+def parse_inaccessible_domains(err_msg: str) -> list:
+    m = _INACCESSIBLE_RE.search(err_msg or "")
+    if not m:
+        return []
+    return [d.strip().strip("'\"").lower() for d in m.group(1).split(",") if d.strip()]
+
+
 class AnthropicJudge(Judge):
     def __init__(self, client, cfg):
         self._client = client
         self._cfg = cfg
         self._system = build_system(cfg.min_sources)
 
-    def _web_search_tool(self) -> dict:
+    def _web_search_tool(self, domains: "list | None" = None) -> dict:
         tool = {
             "type": self._cfg.web_search_tool_version,
             "name": "web_search",
             "max_uses": self._cfg.max_search_uses,
         }
-        domains = dedupe_domains(self._cfg.credible_domains)
+        domains = dedupe_domains(self._cfg.credible_domains if domains is None else domains)
         if domains:
-            # Only one of allowed_domains / blocked_domains may be set, and it
-            # must not contain duplicates.
+            # Only one of allowed_domains / blocked_domains may be set, it must
+            # not contain duplicates, and every entry must be crawler-accessible.
             tool["allowed_domains"] = domains
         return tool
 
@@ -75,33 +89,42 @@ class AnthropicJudge(Judge):
 
     # ------------------------------------------------------------------ #
     def _run(self, claim: Claim) -> dict:
-        messages = [{"role": "user", "content": build_user(claim.text, claim.speaker)}]
-        tools = [self._web_search_tool()]
+        domains = dedupe_domains(self._cfg.credible_domains)
 
-        resp = self._client.messages.create(
+        # Retry loop that heals the allowlist: if web_search rejects domains its
+        # crawler can't reach, drop exactly those and try again.
+        for _ in range(4):
+            messages = [{"role": "user", "content": build_user(claim.text, claim.speaker)}]
+            tools = [self._web_search_tool(domains)]
+            try:
+                resp = self._create(messages, tools)
+                guard = 0
+                while resp.stop_reason == "pause_turn" and guard < 4:
+                    messages.append({"role": "assistant", "content": resp.content})
+                    resp = self._create(messages, tools)
+                    guard += 1
+            except Exception as e:
+                bad = parse_inaccessible_domains(str(e))
+                if bad and domains:
+                    domains = [d for d in domains if d not in bad]
+                    # Remember the prune on the shared config so later claims skip them.
+                    self._cfg.credible_domains = domains
+                    continue
+                raise
+
+            text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+            return _loads_json_object(text)
+
+        raise RuntimeError("web_search allowlist could not be healed to accessible domains.")
+
+    def _create(self, messages, tools):
+        return self._client.messages.create(
             model=self._cfg.judge_model,
             max_tokens=2000,
             system=self._system,
             tools=tools,
             messages=messages,
         )
-        # Web search can pause a long turn; resume until it settles.
-        guard = 0
-        while resp.stop_reason == "pause_turn" and guard < 4:
-            messages.append({"role": "assistant", "content": resp.content})
-            resp = self._client.messages.create(
-                model=self._cfg.judge_model,
-                max_tokens=2000,
-                system=self._system,
-                tools=tools,
-                messages=messages,
-            )
-            guard += 1
-
-        text = "".join(
-            b.text for b in resp.content if getattr(b, "type", "") == "text"
-        )
-        return _loads_json_object(text)
 
     def _apply(self, result: CheckedClaim, raw: dict) -> None:
         sources = []

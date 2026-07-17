@@ -24,10 +24,13 @@ DEFAULT_CREDIBLE_DOMAINS: list[str] = [
     "supremecourt.gov", "justice.gov", "treasury.gov", "state.gov",
     "who.int", "un.org", "worldbank.org", "imf.org", "oecd.org", "eurostat.ec.europa.eu",
     # Established fact-check orgs
-    "factcheck.org", "politifact.com", "apnews.com", "fullfact.org",
-    # Established outlets (secondary — used to corroborate, not as primary source of truth)
-    "reuters.com", "bbc.com", "npr.org", "pbs.org",
-    "nytimes.com", "washingtonpost.com", "wsj.com", "economist.com",
+    "factcheck.org", "politifact.com", "fullfact.org",
+    # Public-media outlets (crawler-accessible; corroboration, not primary truth).
+    # Paywalled/bot-blocked outlets (nytimes, wsj, reuters, apnews, bbc, economist,
+    # washingtonpost) are intentionally omitted — the web_search crawler can't reach
+    # them, and listing them makes the whole request fail. The app also auto-drops
+    # any inaccessible domain at call time, so an edited list still self-heals.
+    "npr.org", "pbs.org",
     "nature.com", "science.org", "pnas.org", "thelancet.com", "nejm.org",
 ]
 
