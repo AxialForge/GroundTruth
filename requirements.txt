@@ -1,0 +1,21 @@
+# --- Core (Phase 0) ---
+anthropic>=0.40.0        # Messages API + web_search tool (fact-check judge)
+python-docx>=1.1.0       # .docx export
+openpyxl>=3.1.0          # .xlsx export
+
+# --- Local STT (needed for --wav and for live streaming) ---
+faster-whisper>=1.0.0    # local Whisper; set whisper_device="cuda" to use your GPU
+numpy>=1.24              # audio buffers
+
+# --- Live desktop app (run_gui.py / GroundTruth.exe) ---
+fastapi>=0.110           # backend + WebSocket event stream
+uvicorn[standard]>=0.29  # ASGI server
+soundcard>=0.4.3         # mic + WASAPI system-loopback capture (Windows)
+
+# Optional, recommended for source checkouts: upgrades the built-in energy-based
+# voice gate to webrtcvad (sharper speech/silence boundaries). The packaged .exe
+# ships without it and uses the energy gate.
+# webrtcvad-wheels>=2.0.14
+
+# --- Packaging (optional) ---
+# pyinstaller>=6.0        # build the standalone .exe from build/GroundTruth.spec

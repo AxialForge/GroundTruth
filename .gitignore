@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Secrets & local state (NEVER commit) ---
+# The app stores its API key + settings in %APPDATA%/GroundTruth, not here,
+# but guard against any local copies.
+settings.json
+.env
+*.key
+
+# --- Runtime artifacts ---
+claim_cache.json
+exports/
+*.docx
+*.xlsx
+
+# --- Build output ---
+build/*/
+dist/
+*.build/
+*.dist/
+GroundTruth-dist/
+
+# --- Models / audio scratch ---
+*.wav
+*.mp3
+*.mp4
+models/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,15 @@
+# Sample transcript for testing the pipeline end-to-end.
+# Format: [mm:ss] Speaker: text   (timestamp and speaker are optional)
+# Mixes clear-true, clear-false, needs-context, opinion, and question lines
+# so you can see all four verdict states without a real debate.
+
+[00:03] Moderator: Welcome. Let's begin with the economy.
+[00:08] Speaker A: The United States is made up of fifty states.
+[00:14] Speaker A: The Great Wall of China is visible from the Moon with the naked eye.
+[00:21] Speaker B: Water boils at one hundred degrees Celsius at sea level.
+[00:27] Speaker B: I think our infrastructure is the finest in the world and always will be.
+[00:34] Speaker A: Humans only use ten percent of their brains.
+[00:40] Speaker A: The average distance from the Earth to the Sun is about 93 million miles.
+[00:47] Speaker B: Don't you think the other side is simply out of touch with reality?
+[00:53] Speaker B: Mount Everest is the tallest mountain above sea level on Earth.
+[01:00] Speaker A: Lightning never strikes the same place twice.

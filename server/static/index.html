@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GroundTruth · live debate fact-checker</title>
+<style>
+  :root {
+    --bg:#0f1216; --panel:#171b22; --panel2:#1e242d; --line:#2a313c;
+    --ink:#e7ebf0; --muted:#97a3b4; --accent:#5b9dff; --accent2:#7ee0a2;
+    --green:#C6EFCE; --red:#FFC7CE; --yellow:#FFEB9C; --grey:#D9D9D9; --pill-ink:#14181d;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  a { color:var(--accent); }
+  header { padding:12px 20px 0; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; }
+  .brand { display:flex; align-items:baseline; gap:10px; }
+  h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:.2px; }
+  h1 .g { color:var(--accent2); }
+  .tag { color:var(--muted); font-size:12px; }
+  .disclaimer { margin:6px 0 10px; color:var(--muted); font-size:12px; max-width:960px; }
+  nav { display:flex; gap:2px; }
+  nav button { background:none; border:none; color:var(--muted); padding:9px 15px; font-size:14px; font-weight:600;
+    cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.active { color:var(--ink); border-bottom-color:var(--accent); }
+  main { padding:18px 20px 60px; }
+  .tab { display:none; }
+  .tab.active { display:block; }
+
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:15px; margin-bottom:14px; }
+  .card h2 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); }
+  label { display:block; font-size:12px; color:var(--muted); margin:9px 0 3px; }
+  select, input[type=text], input[type=number], input[type=password], textarea {
+    width:100%; padding:8px 9px; background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line); border-radius:7px; font-size:13.5px; font-family:inherit; }
+  textarea { resize:vertical; min-height:90px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > * { flex:1; min-width:150px; }
+  .hint { font-size:11.5px; color:var(--muted); margin-top:3px; }
+  button.btn { padding:9px 14px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--ink); font-size:13.5px; font-weight:600; cursor:pointer; }
+  button.btn.primary { background:var(--accent); border-color:var(--accent); color:#08101f; }
+  button.btn:disabled { opacity:.45; cursor:not-allowed; }
+  .saved { color:var(--accent2); font-size:12.5px; margin-left:10px; }
+
+  /* Live tab layout */
+  .live { display:flex; gap:16px; align-items:flex-start; }
+  .feedcol { flex:1 1 auto; min-width:0; }
+  .side { flex:0 0 300px; position:sticky; top:120px; display:flex; flex-direction:column; gap:14px; }
+  .meter { display:grid; grid-template-columns:1fr 1fr; gap:8px 10px; }
+  .meter .big { grid-column:1/-1; font-size:26px; font-weight:700; }
+  .stat { font-size:12px; color:var(--muted); } .stat b { display:block; color:var(--ink); font-size:15px; font-weight:600; }
+  .legend div { display:flex; align-items:center; gap:8px; font-size:12.5px; margin:5px 0; color:var(--muted); }
+  .dot { width:12px; height:12px; border-radius:3px; flex:0 0 auto; }
+  .status { font-size:12.5px; color:var(--muted); padding:2px 0; }
+  .status.live b { color:var(--accent2); } .status.err b { color:#ff9b9b; }
+
+  .utt { padding:9px 0; border-bottom:1px solid var(--line); }
+  .utt .meta { font-size:11.5px; color:var(--muted); } .utt .who { color:var(--accent); font-weight:600; }
+  .utt .text { margin-top:2px; }
+  .claims { margin:7px 0 2px; display:flex; flex-direction:column; gap:6px; }
+  .claim { border:1px solid var(--line); border-left:4px solid var(--grey); border-radius:7px; background:var(--panel); overflow:hidden; }
+  .claim .head { display:flex; align-items:center; gap:9px; padding:7px 10px; cursor:pointer; }
+  .pill { flex:0 0 auto; font-size:10.5px; font-weight:800; letter-spacing:.4px; padding:3px 8px; border-radius:20px;
+    background:var(--grey); color:var(--pill-ink); text-transform:uppercase; white-space:nowrap; }
+  .claim .ctext { flex:1; min-width:0; } .claim .conf { font-size:11px; color:var(--muted); flex:0 0 auto; }
+  .claim .body { display:none; padding:0 12px 11px; font-size:13px; } .claim.open .body { display:block; }
+  .claim .reason { margin:2px 0 8px; } .claim .spinner { color:var(--muted); font-style:italic; }
+  .src { display:block; padding:4px 0; border-top:1px dashed var(--line); }
+  .src a { word-break:break-all; text-decoration:none; }
+  .stance { font-size:10px; font-weight:700; text-transform:uppercase; padding:1px 6px; border-radius:10px; margin-right:6px; }
+  .stance.supports { background:var(--green); color:var(--pill-ink); }
+  .stance.contradicts { background:var(--red); color:var(--pill-ink); }
+  .stance.context { background:var(--yellow); color:var(--pill-ink); }
+  .src .quote { color:var(--muted); font-size:12px; margin-top:2px; }
+  .empty { color:var(--muted); padding:30px 0; text-align:center; }
+
+  /* Spending tab */
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .kpi .n { font-size:26px; font-weight:700; } .kpi .l { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:6px; }
+  th,td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--panel2);
+    border:1px solid var(--line); padding:10px 16px; border-radius:8px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none; max-width:80vw; z-index:20; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><h1><span class="g">Ground</span>Truth</h1><span class="tag">real-time debate fact-checker</span></div>
+  <div class="disclaimer" id="disclaimer"></div>
+  <nav>
+    <button data-tab="live" class="active">● Live</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="api">API</button>
+    <button data-tab="spending">Spending</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ===================== LIVE ===================== -->
+  <section class="tab active" id="tab-live">
+    <div class="live">
+      <div class="feedcol">
+        <div id="feed"><div class="empty">Pick a source and press Start. Claims appear grey, then flip color as each fact-check returns.</div></div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h2>Source</h2>
+          <label>Audio input</label>
+          <select id="sourceType">
+            <option value="loopback">System audio (TV / browser / app)</option>
+            <option value="mic">Microphone (in person)</option>
+            <option value="file">Audio file (.wav)</option>
+          </select>
+          <div id="deviceWrap"><label>Device</label><select id="device"></select></div>
+          <div id="fileWrap" style="display:none"><label>File path</label><input type="text" id="filePath" placeholder="C:\path\to\debate.wav" /></div>
+          <label>Session budget (USD, 0 = unlimited)</label>
+          <input type="number" id="budget" min="0" step="0.5" value="0" />
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="startBtn">Start</button>
+            <button class="btn" id="stopBtn" disabled>Stop</button>
+          </div>
+          <button class="btn" id="saveBtn" style="width:100%; margin-top:8px" disabled>Save log (.docx + .xlsx)</button>
+          <div class="status" id="status">Idle.</div>
+        </div>
+        <div class="card">
+          <h2>Session cost <span style="text-transform:none;font-weight:400">(estimate)</span></h2>
+          <div class="meter">
+            <div class="big" id="cost">$0.00</div>
+            <div class="stat"><b id="cClaims">0</b>claims checked</div>
+            <div class="stat"><b id="cPending">0</b>pending</div>
+            <div class="stat"><b id="cSearch">0</b>web searches</div>
+            <div class="stat"><b id="cTok">0</b>tokens</div>
+          </div>
+        </div>
+        <div class="card legend">
+          <h2>What the colors mean</h2>
+          <div><span class="dot" style="background:var(--green)"></span> Supported — 3+ credible sources</div>
+          <div><span class="dot" style="background:var(--red)"></span> Contradicted — refuted by a citation</div>
+          <div><span class="dot" style="background:var(--yellow)"></span> Disputed — partial / out of date</div>
+          <div><span class="dot" style="background:var(--grey)"></span> Pending / not checkable</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <section class="tab" id="tab-settings">
+    <div class="card">
+      <h2>Audio capture</h2>
+      <div class="row">
+        <div><label>Default source</label>
+          <select id="s_audio_source"><option value="loopback">System audio (loopback)</option><option value="mic">Microphone</option><option value="file">File</option></select></div>
+        <div><label>VAD aggressiveness (0–3)</label><input type="number" id="s_vad_aggressiveness" min="0" max="3" /></div>
+      </div>
+      <div class="row">
+        <div><label>End-of-utterance silence (ms)</label><input type="number" id="s_vad_silence_ms" min="200" step="50" /></div>
+        <div><label>Min segment (ms)</label><input type="number" id="s_vad_min_segment_ms" min="100" step="50" /></div>
+        <div><label>Max segment (s)</label><input type="number" id="s_vad_max_segment_s" min="4" step="1" /></div>
+      </div>
+      <div class="hint">Higher aggressiveness cuts more silence; shorter max-segment flushes long monologues sooner so verdicts don't stall.</div>
+    </div>
+    <div class="card">
+      <h2>Local transcription (Whisper)</h2>
+      <div class="row">
+        <div><label>Model size</label>
+          <select id="s_whisper_model_size"><option>tiny</option><option>base</option><option>small</option><option>medium</option><option>large-v3</option></select></div>
+        <div><label>Device</label><select id="s_whisper_device"><option>auto</option><option>cuda</option><option>cpu</option></select></div>
+        <div><label>Compute type</label><select id="s_whisper_compute_type"><option>auto</option><option>float16</option><option>int8_float16</option><option>int8</option></select></div>
+      </div>
+      <div class="hint">With your NVIDIA GPU, <b>cuda + float16</b> keeps 'small'/'medium' near-real-time. On CPU use 'small' or smaller.</div>
+    </div>
+    <div class="card">
+      <h2>Verdict &amp; performance</h2>
+      <div class="row">
+        <div><label>Sources required for GREEN</label><input type="number" id="s_min_sources" min="1" max="6" /></div>
+        <div><label>Parallel fact-checks</label><input type="number" id="s_max_concurrent_checks" min="1" max="12" /></div>
+        <div><label>Default budget (USD, 0=∞)</label><input type="number" id="s_session_budget_usd" min="0" step="0.5" /></div>
+      </div>
+      <div class="row">
+        <div><label>Server port <span style="color:var(--muted)">(restart to apply)</span></label><input type="number" id="s_server_port" min="1024" max="65535" /></div>
+        <div style="display:flex;align-items:flex-end"><label style="display:flex;align-items:center;gap:8px;margin:0"><input type="checkbox" id="s_enable_cache" style="width:auto" /> Cache repeated claims</label></div>
+      </div>
+    </div>
+    <button class="btn primary" onclick="saveSettings('settings')">Save settings</button><span class="saved" id="saved-settings"></span>
+  </section>
+
+  <!-- ===================== API ===================== -->
+  <section class="tab" id="tab-api">
+    <div class="card">
+      <h2>Anthropic API key</h2>
+      <div class="hint" id="keyState" style="margin-bottom:6px"></div>
+      <input type="password" id="a_api_key" placeholder="sk-ant-…  (leave blank to keep current)" autocomplete="off" />
+      <div class="hint">Stored locally in <span id="dataDir">%APPDATA%\GroundTruth</span> — never committed to git, never sent anywhere but Anthropic. The <code>ANTHROPIC_API_KEY</code> env var also works.</div>
+    </div>
+    <div class="card">
+      <h2>Models &amp; search</h2>
+      <div class="row">
+        <div><label>Judge model</label><input type="text" id="a_judge_model" /></div>
+        <div><label>Classifier model</label><input type="text" id="a_classifier_model" /></div>
+      </div>
+      <div class="row">
+        <div><label>Web search tool version</label><input type="text" id="a_web_search_tool_version" /></div>
+        <div><label>Max searches per claim</label><input type="number" id="a_max_search_uses" min="1" max="15" /></div>
+      </div>
+      <div class="hint">If a model rejects web search, set the judge to <code>claude-opus-4-8</code>.</div>
+    </div>
+    <div class="card">
+      <h2>Cost estimates <span style="text-transform:none;font-weight:400">(USD per 1M tokens · edit to match current pricing)</span></h2>
+      <div id="priceRows"></div>
+      <div class="row" style="margin-top:8px"><div><label>Web search (USD per 1,000 requests)</label><input type="number" id="a_web_search_price_per_1k" min="0" step="1" /></div><div></div></div>
+    </div>
+    <div class="card">
+      <h2>Credible source allowlist</h2>
+      <div class="hint" style="margin-bottom:6px">One domain per line. Enforced server-side — the judge can <b>only</b> cite from these.</div>
+      <textarea id="a_credible_domains" spellcheck="false"></textarea>
+    </div>
+    <button class="btn primary" onclick="saveSettings('api')">Save API settings</button><span class="saved" id="saved-api"></span>
+  </section>
+
+  <!-- ===================== SPENDING ===================== -->
+  <section class="tab" id="tab-spending">
+    <div class="cards" style="margin-bottom:14px">
+      <div class="kpi"><div class="n" id="sp_total">$0.00</div><div class="l">Total spent</div></div>
+      <div class="kpi"><div class="n" id="sp_month">$0.00</div><div class="l">Last 30 days</div></div>
+      <div class="kpi"><div class="n" id="sp_today">$0.00</div><div class="l">Last 24 h</div></div>
+      <div class="kpi"><div class="n" id="sp_count">0</div><div class="l">Sessions</div></div>
+    </div>
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center">Session history <button class="btn" onclick="loadSpend()" style="font-size:12px;padding:5px 10px">Refresh</button></h2>
+      <div style="overflow-x:auto">
+        <table id="spendTable">
+          <thead><tr><th>When</th><th>Source</th><th class="num">Cost</th><th class="num">Claims</th><th class="num">Searches</th><th class="num">Tokens</th><th class="num">Duration</th></tr></thead>
+          <tbody id="spendBody"><tr><td colspan="7" class="empty">No sessions yet.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="hint" id="sp_estnote" style="margin-top:8px">Costs are estimates from your configured price table (API tab), tallied from token + web-search usage.</div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ws=null, running=false, devices={loopback:[],mic:[]}, settings={};
+
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),3200); }
+function fmt$(v){ v=v||0; return "$"+(v>=1?v.toFixed(2):v.toFixed(4)); }
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// ---- tabs ----
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); $("tab-"+b.dataset.tab).classList.add("active");
+  if(b.dataset.tab==="spending") loadSpend();
+});
+
+// ---- boot ----
+async function boot(){
+  try{ const cfg=await(await fetch("/api/config")).json(); $("disclaimer").textContent=cfg.disclaimer||""; document.title=(cfg.app_name||"GroundTruth")+" · live debate fact-checker"; }catch(e){}
+  try{ devices=await(await fetch("/api/devices")).json(); if(devices.error) toast("Audio: "+devices.error); }catch(e){}
+  renderDevices();
+  await loadSettings();
+  connect();
+}
+
+// ---- Live: source ----
+function renderDevices(){
+  const type=$("sourceType").value;
+  $("deviceWrap").style.display=type==="file"?"none":"block";
+  $("fileWrap").style.display=type==="file"?"block":"none";
+  const sel=$("device"); sel.innerHTML="";
+  const list=type==="mic"?(devices.mic||[]):(devices.loopback||[]);
+  if(!list.length){ const o=document.createElement("option"); o.value=""; o.textContent="System default"; sel.appendChild(o); }
+  for(const d of list){ const o=document.createElement("option"); o.value=d.id; o.textContent=(d.default?"★ ":"")+d.name; sel.appendChild(o); }
+}
+$("sourceType").addEventListener("change", renderDevices);
+
+// ---- websocket ----
+function connect(){
+  const proto=location.protocol==="https:"?"wss":"ws";
+  ws=new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage=(ev)=>handle(JSON.parse(ev.data));
+  ws.onclose=()=>{ setRunning(false); $("status").textContent="Disconnected. Refresh to reconnect."; };
+}
+function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
+function setRunning(on){ running=on; $("startBtn").disabled=on; $("stopBtn").disabled=!on;
+  $("sourceType").disabled=on; $("device").disabled=on; $("budget").disabled=on; }
+
+$("startBtn").onclick=()=>{ const f=$("feed"); if(f.querySelector(".empty")) f.innerHTML="";
+  send({action:"start", source:$("sourceType").value, device_id:$("device").value, file_path:$("filePath").value, budget_usd:parseFloat($("budget").value)||0}); setRunning(true); };
+$("stopBtn").onclick=()=>{ send({action:"stop"}); $("status").textContent="Stopping…"; };
+$("saveBtn").onclick=()=>send({action:"save"});
+
+function handle(m){
+  switch(m.type){
+    case "status":{ const s=$("status"); s.className="status "+(m.state==="running"?"live":m.state==="error"?"err":"");
+      s.innerHTML=(m.state==="running"?"<b>● LIVE</b> ":m.state==="error"?"<b>error</b> ":"")+(m.message||"");
+      if(m.state==="stopped"||m.state==="error") setRunning(false);
+      if(m.state!=="idle") $("saveBtn").disabled=false; break; }
+    case "utterance": addUtterance(m); break;
+    case "claim": if(m.checkable) addClaim(m); break;
+    case "verdict": updateVerdict(m); break;
+    case "stats": updateStats(m); break;
+    case "spend": renderSpend(m); break;
+    case "saved": m.error?toast("Save failed: "+m.error):toast("Saved: "+m.docx.split(/[\\/]/).pop()+" + .xlsx"); break;
+  }
+}
+
+function addUtterance(u){
+  const el=document.createElement("div"); el.className="utt"; el.dataset.uid=u.id;
+  const who=u.speaker?`<span class="who">${esc(u.speaker)}</span> · `:"";
+  el.innerHTML=`<div class="meta">${who}${u.t}s</div><div class="text">${esc(u.text)}</div><div class="claims"></div>`;
+  $("feed").appendChild(el); el.scrollIntoView({behavior:"smooth",block:"end"});
+}
+function claimsHost(uid){ const u=document.querySelector(`.utt[data-uid="${uid}"]`);
+  if(u) return u.querySelector(".claims");
+  const h=document.createElement("div"); h.className="claims"; $("feed").appendChild(h); return h; }
+function addClaim(c){
+  const el=document.createElement("div"); el.className="claim"; el.dataset.cid=c.id;
+  el.innerHTML=`<div class="head"><span class="pill">Checking…</span><span class="ctext">${esc(c.text)}</span><span class="conf"></span></div>
+    <div class="body"><div class="reason spinner">Fact-checking against credible sources…</div></div>`;
+  el.querySelector(".head").onclick=()=>el.classList.toggle("open");
+  claimsHost(c.utterance_id).appendChild(el);
+}
+function cvar(v){ return v==="GREEN"?"green":v==="RED"?"red":v==="YELLOW"?"yellow":"grey"; }
+function updateVerdict(v){
+  const el=document.querySelector(`.claim[data-cid="${v.id}"]`); if(!el) return;
+  el.style.borderLeftColor="var(--"+cvar(v.verdict)+")";
+  const pill=el.querySelector(".pill"); pill.textContent=v.label; pill.style.background="var(--"+cvar(v.verdict)+")";
+  el.querySelector(".conf").textContent=v.error?"":(v.verdict==="GREY"?"":`conf ${v.confidence}`);
+  const body=el.querySelector(".body");
+  if(v.error){ body.innerHTML=`<div class="reason">⚠ ${esc(v.error)}</div>`; return; }
+  let h=`<div class="reason">${esc(v.reasoning||"—")}</div>`;
+  for(const s of (v.sources||[])) h+=`<div class="src"><span class="stance ${s.stance}">${s.stance}</span>`+
+    `<a href="${encodeURI(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`+
+    (s.quote?`<div class="quote">“${esc(s.quote)}”</div>`:``)+`</div>`;
+  body.innerHTML=h;
+}
+function updateStats(s){
+  $("cost").textContent=fmt$(s.cost_usd); $("cost").style.color=s.over_budget?"var(--red)":"var(--ink)";
+  $("cClaims").textContent=s.claims_total||0; $("cPending").textContent=s.claims_pending||0;
+  $("cSearch").textContent=s.web_searches||0;
+  const t=(s.input_tokens||0)+(s.output_tokens||0); $("cTok").textContent=t>=1000?(t/1000).toFixed(1)+"k":t;
+}
+
+// ---- Settings + API ----
+const PRICE_MODELS=["claude-sonnet-5","claude-opus-4-8","claude-haiku-4-5-20251001"];
+async function loadSettings(){
+  try{ settings=await(await fetch("/api/settings")).json(); }catch(e){ return; }
+  const S=settings;
+  const set=(id,v)=>{ const e=$(id); if(e!=null&&v!=null) e.value=v; };
+  set("s_audio_source",S.audio_source); set("s_vad_aggressiveness",S.vad_aggressiveness);
+  set("s_vad_silence_ms",S.vad_silence_ms); set("s_vad_min_segment_ms",S.vad_min_segment_ms); set("s_vad_max_segment_s",S.vad_max_segment_s);
+  set("s_whisper_model_size",S.whisper_model_size); set("s_whisper_device",S.whisper_device); set("s_whisper_compute_type",S.whisper_compute_type);
+  set("s_min_sources",S.min_sources); set("s_max_concurrent_checks",S.max_concurrent_checks); set("s_session_budget_usd",S.session_budget_usd);
+  set("s_server_port",S.server_port); $("s_enable_cache").checked=!!S.enable_cache;
+  set("a_judge_model",S.judge_model); set("a_classifier_model",S.classifier_model);
+  set("a_web_search_tool_version",S.web_search_tool_version); set("a_max_search_uses",S.max_search_uses);
+  set("a_web_search_price_per_1k",S.web_search_price_per_1k);
+  $("a_credible_domains").value=(S.credible_domains||[]).join("\n");
+  $("dataDir").textContent=S.data_dir||"%APPDATA%\\GroundTruth";
+  const src=S.anthropic_api_key_source;
+  $("keyState").innerHTML = S.anthropic_api_key_set
+    ? `✔ Key set (${esc(S.anthropic_api_key_hint)}, source: ${src}).`
+    : `⚠ No API key yet — set one here or via the ANTHROPIC_API_KEY env var.`;
+  renderPriceRows(S.model_prices||{});
+}
+function renderPriceRows(prices){
+  const host=$("priceRows"); host.innerHTML="";
+  const models=Object.keys(prices).length?Object.keys(prices):PRICE_MODELS;
+  for(const m of models){ const p=prices[m]||{in:"",out:""};
+    const row=document.createElement("div"); row.className="row"; row.style.marginBottom="6px";
+    row.innerHTML=`<div style="flex:2"><label>${esc(m)}</label><input type="text" value="${esc(m)}" data-price-model style="opacity:.6" readonly></div>
+      <div><label>Input $/M</label><input type="number" step="0.01" data-price-in value="${p.in??""}"></div>
+      <div><label>Output $/M</label><input type="number" step="0.01" data-price-out value="${p.out??""}"></div>`;
+    host.appendChild(row);
+  }
+}
+function gatherSettings(){
+  const num=id=>{ const v=parseFloat($(id).value); return isNaN(v)?null:v; };
+  const prices={}; const rows=$("priceRows").querySelectorAll(".row");
+  rows.forEach(r=>{ const m=r.querySelector("[data-price-model]").value;
+    prices[m]={in:parseFloat(r.querySelector("[data-price-in]").value)||0, out:parseFloat(r.querySelector("[data-price-out]").value)||0}; });
+  const out={
+    audio_source:$("s_audio_source").value, vad_aggressiveness:num("s_vad_aggressiveness"),
+    vad_silence_ms:num("s_vad_silence_ms"), vad_min_segment_ms:num("s_vad_min_segment_ms"), vad_max_segment_s:num("s_vad_max_segment_s"),
+    whisper_model_size:$("s_whisper_model_size").value, whisper_device:$("s_whisper_device").value, whisper_compute_type:$("s_whisper_compute_type").value,
+    min_sources:num("s_min_sources"), max_concurrent_checks:num("s_max_concurrent_checks"), session_budget_usd:num("s_session_budget_usd"),
+    server_port:num("s_server_port"), enable_cache:$("s_enable_cache").checked,
+    judge_model:$("a_judge_model").value, classifier_model:$("a_classifier_model").value,
+    web_search_tool_version:$("a_web_search_tool_version").value, max_search_uses:num("a_max_search_uses"),
+    web_search_price_per_1k:num("a_web_search_price_per_1k"),
+    credible_domains:$("a_credible_domains").value.split("\n").map(s=>s.trim()).filter(Boolean),
+    model_prices:prices,
+  };
+  const key=$("a_api_key").value.trim(); if(key) out.anthropic_api_key=key;
+  return out;
+}
+async function saveSettings(which){
+  try{
+    const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(gatherSettings())});
+    const j=await r.json();
+    $("a_api_key").value="";
+    $("saved-"+which).textContent="✔ Saved"; setTimeout(()=>$("saved-"+which).textContent="",2500);
+    await loadSettings(); toast("Settings saved. Model/audio/budget changes apply to the next Start; port needs a restart.");
+  }catch(e){ toast("Save failed: "+e); }
+}
+
+// ---- Spending ----
+async function loadSpend(){ try{ renderSpend(await(await fetch("/api/spend")).json()); }catch(e){} }
+function renderSpend(d){
+  $("sp_total").textContent=fmt$(d.total_usd); $("sp_month").textContent=fmt$(d.month_usd);
+  $("sp_today").textContent=fmt$(d.today_usd); $("sp_count").textContent=d.session_count||0;
+  const body=$("spendBody");
+  if(!d.sessions||!d.sessions.length){ body.innerHTML=`<tr><td colspan="7" class="empty">No sessions yet.</td></tr>`; return; }
+  body.innerHTML="";
+  for(const s of d.sessions){
+    const when=new Date(s.ts*1000).toLocaleString();
+    const tok=(s.input_tokens||0)+(s.output_tokens||0);
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${esc(when)}</td><td>${esc(s.source||"")}</td><td class="num">${fmt$(s.cost_usd)}</td>`+
+      `<td class="num">${s.claims||0}</td><td class="num">${s.web_searches||0}</td>`+
+      `<td class="num">${tok>=1000?(tok/1000).toFixed(1)+"k":tok}</td><td class="num">${Math.round(s.duration_s||0)}s</td>`;
+    body.appendChild(tr);
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
