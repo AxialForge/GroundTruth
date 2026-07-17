@@ -23,11 +23,13 @@ class FasterWhisperSTT(STTEngine):
         model_size: str = "small",
         device: str = "auto",
         compute_type: str = "auto",
+        speaker: "str | None" = None,
     ):
         self.wav_path = wav_path
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        self.speaker = speaker or None
 
     def stream(self) -> Iterator[Utterance]:
         try:
@@ -50,4 +52,5 @@ class FasterWhisperSTT(STTEngine):
         for seg in segments:
             text = seg.text.strip()
             if text:
-                yield Utterance(text=text, start=float(seg.start), end=float(seg.end))
+                yield Utterance(text=text, start=float(seg.start), end=float(seg.end),
+                                speaker=self.speaker)

@@ -102,7 +102,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><h1><span class="g">Ground</span>Truth</h1><span class="tag">real-time debate fact-checker</span></div>
+  <div class="brand"><h1><span class="g">Ground</span>Truth</h1><span class="tag">real-time fact-checker · debates, speeches &amp; news</span></div>
   <div class="disclaimer" id="disclaimer"></div>
   <nav>
     <button data-tab="live" class="active">● Live</button>
@@ -129,7 +129,16 @@
             <option value="file">Audio file (.wav)</option>
           </select>
           <div id="deviceWrap"><label>Device</label><select id="device"></select></div>
-          <div id="fileWrap" style="display:none"><label>File path</label><input type="text" id="filePath" placeholder="C:\path\to\debate.wav" /></div>
+          <div id="fileWrap" style="display:none"><label>File path</label><input type="text" id="filePath" placeholder="C:\path\to\audio.wav" /></div>
+          <label>Listening to</label>
+          <select id="mode">
+            <option value="debate">Debate (multiple speakers)</option>
+            <option value="news">News broadcast</option>
+            <option value="speaker">Single speaker / speech</option>
+            <option value="podcast">Podcast / interview</option>
+          </select>
+          <label>Speaker label <span style="color:var(--muted)">— optional</span></label>
+          <input type="text" id="speaker" placeholder="e.g. Gov. Smith — labels every claim" />
           <label>Session budget (USD, 0 = unlimited)</label>
           <input type="number" id="budget" min="0" step="0.5" value="0" />
           <label>Input level <span style="color:var(--muted)">— play your video, then Test audio</span></label>
@@ -313,11 +322,12 @@ function connect(){
 function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
 function setRunning(on){ running=on; $("startBtn").disabled=on; $("stopBtn").disabled=!on;
   $("sourceType").disabled=on; $("device").disabled=on; $("budget").disabled=on;
-  $("audioTestBtn").disabled=on;
+  $("mode").disabled=on; $("speaker").disabled=on; $("audioTestBtn").disabled=on;
   if(on && metering) setMetering(false); }
 
 $("startBtn").onclick=()=>{ const f=$("feed"); if(f.querySelector(".empty")) f.innerHTML="";
-  send({action:"start", source:$("sourceType").value, device_id:$("device").value, file_path:$("filePath").value, budget_usd:parseFloat($("budget").value)||0}); setRunning(true); };
+  send({action:"start", source:$("sourceType").value, device_id:$("device").value, file_path:$("filePath").value,
+        mode:$("mode").value, speaker:$("speaker").value, budget_usd:parseFloat($("budget").value)||0}); setRunning(true); };
 $("stopBtn").onclick=()=>{ send({action:"stop"}); $("status").textContent="Stopping…"; };
 $("saveBtn").onclick=()=>send({action:"save"});
 

@@ -36,6 +36,17 @@ from server import store
 
 APP_NAME = "GroundTruth"
 
+# Listening modes tune only how audio is segmented — the fact-check pipeline is the
+# same for a debate, a newscast, or one person talking. "speaker" = single speaker /
+# speech / lecture: longer segments and more patient silence so a monologue isn't
+# chopped mid-sentence. Debates get snappier cuts to keep up with crosstalk.
+_MODE_PROFILES = {
+    "debate":  {"silence_ms": 550, "max_segment_s": 12.0},
+    "news":    {"silence_ms": 700, "max_segment_s": 14.0},
+    "speaker": {"silence_ms": 900, "max_segment_s": 20.0},
+    "podcast": {"silence_ms": 800, "max_segment_s": 18.0},
+}
+
 # Static assets: bundled next to the code, or under _MEIPASS when frozen by PyInstaller.
 if getattr(sys, "frozen", False):
     _STATIC = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "server" / "static"
@@ -107,6 +118,7 @@ class Session:
         self.source = ""
         self._level_capture = None
         self._level_thread: threading.Thread | None = None
+        self.mode = "debate"
 
     # --- called from worker threads: hand a message to the async sender ---
     def _emit(self, msg: dict) -> None:
@@ -142,6 +154,11 @@ class Session:
         device_id = params.get("device_id") or ""
         file_path = params.get("file_path") or ""
         self._budget = float(params.get("budget_usd") or 0.0)
+        self.mode = (params.get("mode") or "debate").lower()
+        speaker = (params.get("speaker") or "").strip() or None
+        prof = _MODE_PROFILES.get(self.mode, {})
+        silence_ms = int(prof.get("silence_ms", config.vad_silence_ms))
+        max_segment_s = float(prof.get("max_segment_s", config.vad_max_segment_s))
 
         # Metered client so every extractor + judge call lands on the cost meter.
         self._meter = CostMeter(config.model_prices, config.web_search_price_per_1k)
@@ -156,6 +173,7 @@ class Session:
                 stt = FasterWhisperSTT(
                     file_path, model_size=config.whisper_model_size,
                     device=config.whisper_device, compute_type=config.whisper_compute_type,
+                    speaker=speaker,
                 )
                 self._capture = None
             else:
@@ -167,9 +185,10 @@ class Session:
                     compute_type=config.whisper_compute_type,
                     sample_rate=config.sample_rate,
                     vad_aggressiveness=config.vad_aggressiveness,
-                    silence_ms=config.vad_silence_ms,
+                    silence_ms=silence_ms,
                     min_segment_ms=config.vad_min_segment_ms,
-                    max_segment_s=config.vad_max_segment_s,
+                    max_segment_s=max_segment_s,
+                    speaker=speaker,
                 )
         except Exception as e:
             self._emit({"type": "status", "state": "error", "message": f"Audio setup failed: {e}"})
@@ -202,7 +221,9 @@ class Session:
 
         self._running = True
         self._started_at = time.time()
-        self._emit({"type": "status", "state": "running", "message": f"Listening ({self.source})…"})
+        who = f" · {speaker}" if speaker else ""
+        self._emit({"type": "status", "state": "running",
+                    "message": f"Listening — {self.mode}{who} ({self.source})…"})
         self._thread = threading.Thread(target=self._run, args=(cache,), daemon=True)
         self._thread.start()
 

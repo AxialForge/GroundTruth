@@ -86,6 +86,7 @@ class StreamingWhisperSTT(STTEngine):
         silence_ms: int = 700,
         min_segment_ms: int = 400,
         max_segment_s: float = 14.0,
+        speaker: "str | None" = None,
     ):
         self.capture = capture
         self.model_size = model_size
@@ -96,6 +97,9 @@ class StreamingWhisperSTT(STTEngine):
         self.silence_ms = silence_ms
         self.min_segment_ms = min_segment_ms
         self.max_segment_s = max_segment_s
+        # Optional fixed speaker label (e.g. a single speaker, a named news anchor).
+        # Applied to every Utterance this session, so it flows into the feed + exports.
+        self.speaker = speaker or None
 
     # ------------------------------------------------------------------ #
     def stream(self) -> Iterator[Utterance]:
@@ -165,11 +169,22 @@ class StreamingWhisperSTT(STTEngine):
 
         audio = np.concatenate(voiced).astype(np.float32)
         # faster-whisper accepts a raw float32 mono array at 16 kHz directly.
-        segments, _info = model.transcribe(audio, beam_size=5, vad_filter=False)
+        # For continuous listening (news, a long speech), condition_on_previous_text
+        # off avoids repetition loops, and the no_speech / logprob thresholds drop
+        # Whisper's classic hallucinations on music stings, applause, and silence
+        # that slipped past the voice gate — so non-speech never becomes a "claim".
+        segments, _info = model.transcribe(
+            audio, beam_size=5, vad_filter=False,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.6,
+            log_prob_threshold=-1.0,
+        )
         for seg in segments:
             text = (seg.text or "").strip()
             if not text:
                 continue
+            if getattr(seg, "no_speech_prob", 0.0) > 0.8 and getattr(seg, "avg_logprob", 0.0) < -0.7:
+                continue  # near-certain non-speech; skip the likely hallucination
             start = seg_start + float(seg.start)
             end = seg_start + float(seg.end)
-            yield Utterance(text=text, start=start, end=end)
+            yield Utterance(text=text, start=start, end=end, speaker=self.speaker)
