@@ -92,6 +92,10 @@ def update_and_persist(cfg, incoming: dict) -> dict:
     for key in _EDITABLE:
         if key in incoming:
             saved[key] = incoming[key]
+    # De-dupe the allowlist so the web_search tool never sees duplicate domains.
+    if isinstance(saved.get("credible_domains"), list):
+        from ddld.factcheck.anthropic_judge import dedupe_domains
+        saved["credible_domains"] = dedupe_domains(saved["credible_domains"])
     api_key = (incoming.get("anthropic_api_key") or "").strip()
     if api_key:
         saved["anthropic_api_key"] = api_key

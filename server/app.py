@@ -414,9 +414,11 @@ def test_anthropic():
     # 2) judge model + web_search + allowlist (the feature that actually matters)
     t = time.time()
     try:
+        from ddld.factcheck.anthropic_judge import dedupe_domains
         tool = {"type": config.web_search_tool_version, "name": "web_search", "max_uses": 1}
-        if config.credible_domains:
-            tool["allowed_domains"] = config.credible_domains
+        domains = dedupe_domains(config.credible_domains)
+        if domains:
+            tool["allowed_domains"] = domains
         msgs = [{"role": "user", "content":
                  "Use web search to find the current U.S. unemployment rate, then reply in one short sentence with the number and its source."}]
         r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)

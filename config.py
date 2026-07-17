@@ -26,7 +26,7 @@ DEFAULT_CREDIBLE_DOMAINS: list[str] = [
     # Established fact-check orgs
     "factcheck.org", "politifact.com", "apnews.com", "fullfact.org",
     # Established outlets (secondary — used to corroborate, not as primary source of truth)
-    "reuters.com", "apnews.com", "bbc.com", "npr.org", "pbs.org",
+    "reuters.com", "bbc.com", "npr.org", "pbs.org",
     "nytimes.com", "washingtonpost.com", "wsj.com", "economist.com",
     "nature.com", "science.org", "pnas.org", "thelancet.com", "nejm.org",
 ]

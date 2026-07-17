@@ -23,6 +23,19 @@ from .base import Judge
 from .judge_prompt import build_system, build_user
 
 
+def dedupe_domains(domains) -> list:
+    """Normalize + de-duplicate an allowlist. The web_search tool rejects
+    `allowed_domains` containing duplicates (case-insensitively), and a
+    user-edited list is easy to get wrong — so clean it at every call site."""
+    seen, out = set(), []
+    for d in domains or []:
+        norm = (d or "").strip().lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").rstrip("/")
+        if norm and norm not in seen:
+            seen.add(norm)
+            out.append(norm)
+    return out
+
+
 class AnthropicJudge(Judge):
     def __init__(self, client, cfg):
         self._client = client
@@ -35,9 +48,11 @@ class AnthropicJudge(Judge):
             "name": "web_search",
             "max_uses": self._cfg.max_search_uses,
         }
-        if self._cfg.credible_domains:
-            # Only one of allowed_domains / blocked_domains may be set.
-            tool["allowed_domains"] = self._cfg.credible_domains
+        domains = dedupe_domains(self._cfg.credible_domains)
+        if domains:
+            # Only one of allowed_domains / blocked_domains may be set, and it
+            # must not contain duplicates.
+            tool["allowed_domains"] = domains
         return tool
 
     def check(self, claim: Claim) -> CheckedClaim:
