@@ -105,6 +105,8 @@ class Session:
         self._started_at = 0.0
         self._budget = 0.0
         self.source = ""
+        self._level_capture = None
+        self._level_thread: threading.Thread | None = None
 
     # --- called from worker threads: hand a message to the async sender ---
     def _emit(self, msg: dict) -> None:
@@ -129,6 +131,7 @@ class Session:
         if self._running:
             self._emit({"type": "status", "state": "running", "message": "Already running."})
             return
+        self.level_stop()  # release the audio device from any level-test meter
         try:
             config.validate()
         except RuntimeError as e:
@@ -240,6 +243,49 @@ class Session:
             self._capture.stop()   # ends the STT stream; pipeline drains in-flight checks then returns
         # File mode has no live capture to interrupt; it finishes on its own.
 
+    # ------------------------------------------------------------------ #
+    #  Audio level meter (no fact-checking) — a quick "is audio coming in?" test.
+    # ------------------------------------------------------------------ #
+    def level_start(self, params: dict) -> None:
+        if self._running:
+            self._emit({"type": "level_status", "state": "error", "message": "Stop the session first."})
+            return
+        self.level_stop()
+        source = (params.get("source") or "loopback").lower()
+        if source == "file":
+            self._emit({"type": "level_status", "state": "error", "message": "Pick a live source (system audio or mic) to test."})
+            return
+        try:
+            cap = make_capture(config, source, params.get("device_id") or "")
+        except Exception as e:
+            self._emit({"type": "level_status", "state": "error", "message": f"Audio: {e}"})
+            return
+        self._level_capture = cap
+        self._emit({"type": "level_status", "state": "on", "message": f"Metering {source}…"})
+        self._level_thread = threading.Thread(target=self._level_run, args=(cap,), daemon=True)
+        self._level_thread.start()
+
+    def _level_run(self, cap) -> None:
+        import math
+        import numpy as np
+        try:
+            for block in cap.frames():
+                if block is None or len(block) == 0:
+                    continue
+                rms = float(np.sqrt(np.mean(np.square(block, dtype=np.float32)) + 1e-12))
+                peak = float(np.max(np.abs(block)))
+                db = 20.0 * math.log10(rms + 1e-9)
+                self._emit({"type": "level", "rms": round(rms, 5), "peak": round(peak, 5), "db": round(db, 1)})
+        except Exception as e:  # pragma: no cover
+            self._emit({"type": "level_status", "state": "error", "message": f"Audio error: {e}"})
+        finally:
+            self._emit({"type": "level_status", "state": "off", "message": "Meter stopped."})
+
+    def level_stop(self) -> None:
+        if self._level_capture is not None:
+            self._level_capture.stop()
+            self._level_capture = None
+
     def save(self) -> dict:
         if self._pipe is None:
             return {"type": "saved", "error": "Nothing to save yet."}
@@ -298,6 +344,69 @@ def get_spend():
     return JSONResponse(SPEND.summary())
 
 
+def _short_err(e: Exception) -> str:
+    msg = str(e)
+    low = msg.lower()
+    if "401" in msg or "authentication" in low or "invalid x-api-key" in low or "invalid api key" in low:
+        return "Authentication failed — the API key is missing or wrong."
+    if "web_search" in low or "does not support" in low:
+        return f"Model rejected web search: {msg[:180]}"
+    if "rate" in low and "limit" in low:
+        return "Rate limited — try again in a moment."
+    return msg[:220]
+
+
+@app.post("/api/test/anthropic")
+def test_anthropic():
+    """Live check: does the saved key work, and does the judge model accept
+    web_search with the allowlist? Costs a few cents (one search + a tiny ping)."""
+    key = config.anthropic_api_key
+    if not key:
+        return JSONResponse({"ok": False, "message": "No API key set. Add one above (or set ANTHROPIC_API_KEY)."})
+    client = anthropic.Anthropic(api_key=key)
+    out = {"key_source": store.settings_for_ui(config).get("anthropic_api_key_source", "?")}
+
+    # 1) key + connectivity, via the cheap classifier model
+    t = time.time()
+    try:
+        r = client.messages.create(
+            model=config.classifier_model, max_tokens=5,
+            messages=[{"role": "user", "content": "Reply with the single word: OK"}],
+        )
+        reply = "".join(b.text for b in r.content if getattr(b, "type", "") == "text").strip()
+        out["classifier"] = {"ok": True, "latency_ms": int((time.time() - t) * 1000),
+                             "model": config.classifier_model, "reply": reply[:20]}
+    except Exception as e:
+        out["classifier"] = {"ok": False, "model": config.classifier_model, "error": _short_err(e)}
+
+    # 2) judge model + web_search + allowlist (the feature that actually matters)
+    t = time.time()
+    try:
+        tool = {"type": config.web_search_tool_version, "name": "web_search", "max_uses": 1}
+        if config.credible_domains:
+            tool["allowed_domains"] = config.credible_domains
+        msgs = [{"role": "user", "content":
+                 "Use web search to find the current U.S. unemployment rate, then reply in one short sentence with the number and its source."}]
+        r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)
+        guard = 0
+        while getattr(r, "stop_reason", "") == "pause_turn" and guard < 3:
+            msgs.append({"role": "assistant", "content": r.content})
+            r = client.messages.create(model=config.judge_model, max_tokens=500, tools=[tool], messages=msgs)
+            guard += 1
+        searched = 0
+        st = getattr(getattr(r, "usage", None), "server_tool_use", None)
+        if st is not None:
+            searched = int(getattr(st, "web_search_requests", 0) or 0)
+        reply = "".join(b.text for b in r.content if getattr(b, "type", "") == "text").strip()
+        out["judge"] = {"ok": True, "latency_ms": int((time.time() - t) * 1000),
+                        "model": config.judge_model, "searched": searched, "reply": reply[:200]}
+    except Exception as e:
+        out["judge"] = {"ok": False, "model": config.judge_model, "error": _short_err(e)}
+
+    out["ok"] = bool(out.get("classifier", {}).get("ok"))
+    return JSONResponse(out)
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
@@ -321,10 +430,15 @@ async def ws_endpoint(ws: WebSocket):
                 session.stop()
             elif action == "save":
                 await ws.send_json(session.save())
+            elif action == "level_start":
+                session.level_start(data)
+            elif action == "level_stop":
+                session.level_stop()
             elif action == "devices":
                 await ws.send_json({"type": "devices", **list_devices()})
     except WebSocketDisconnect:
         session.stop()
+        session.level_stop()
     finally:
         send_task.cancel()
 

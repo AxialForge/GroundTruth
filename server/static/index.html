@@ -85,6 +85,15 @@
   th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
 
+  .meterbar { position:relative; height:12px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:6px; overflow:hidden; margin:6px 0 4px; }
+  .meterfill { height:100%; width:0%; background:linear-gradient(90deg,#3fb36b 0%,#3fb36b 55%,#e0c04a 80%,#e05a5a 100%);
+    transition:width .08s linear; }
+  .meterpeak { position:absolute; top:0; bottom:0; width:2px; background:var(--ink); opacity:.75; left:0; transition:left .12s linear; }
+  .testout { font-size:12px; margin-top:6px; line-height:1.45; }
+  .testout .ok { color:var(--accent2); } .testout .bad { color:#ff9b9b; }
+  .testout .ln { display:block; } .testout .reply { color:var(--muted); font-style:italic; }
+  .mono { font-variant-numeric:tabular-nums; }
   .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--panel2);
     border:1px solid var(--line); padding:10px 16px; border-radius:8px; font-size:13px; opacity:0;
     transition:opacity .2s; pointer-events:none; max-width:80vw; z-index:20; }
@@ -123,11 +132,16 @@
           <div id="fileWrap" style="display:none"><label>File path</label><input type="text" id="filePath" placeholder="C:\path\to\debate.wav" /></div>
           <label>Session budget (USD, 0 = unlimited)</label>
           <input type="number" id="budget" min="0" step="0.5" value="0" />
+          <label>Input level <span style="color:var(--muted)">— play your video, then Test audio</span></label>
+          <div class="meterbar"><div class="meterfill" id="lvlFill"></div><div class="meterpeak" id="lvlPeak"></div></div>
+          <div class="row"><button class="btn" id="audioTestBtn">Test audio</button><span class="hint mono" id="lvlDb" style="align-self:center">—</span></div>
           <div class="row" style="margin-top:12px">
             <button class="btn primary" id="startBtn">Start</button>
             <button class="btn" id="stopBtn" disabled>Stop</button>
           </div>
           <button class="btn" id="saveBtn" style="width:100%; margin-top:8px" disabled>Save log (.docx + .xlsx)</button>
+          <button class="btn" id="apiTestBtnLive" style="width:100%; margin-top:8px">Test API connection</button>
+          <div class="testout" id="apiTestOutLive"></div>
           <div class="status" id="status">Idle.</div>
         </div>
         <div class="card">
@@ -199,6 +213,9 @@
       <div class="hint" id="keyState" style="margin-bottom:6px"></div>
       <input type="password" id="a_api_key" placeholder="sk-ant-…  (leave blank to keep current)" autocomplete="off" />
       <div class="hint">Stored locally in <span id="dataDir">%APPDATA%\GroundTruth</span> — never committed to git, never sent anywhere but Anthropic. The <code>ANTHROPIC_API_KEY</code> env var also works.</div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="apiTestBtn" style="flex:0 0 auto">Test API connection</button></div>
+      <div class="hint">Pings the classifier model and runs one real web search on the judge model — verifies the key, the models, and the allowlist. Costs a few cents. Save the key first if you just entered it.</div>
+      <div class="testout" id="apiTestOut"></div>
     </div>
     <div class="card">
       <h2>Models &amp; search</h2>
@@ -283,7 +300,8 @@ function renderDevices(){
   if(!list.length){ const o=document.createElement("option"); o.value=""; o.textContent="System default"; sel.appendChild(o); }
   for(const d of list){ const o=document.createElement("option"); o.value=d.id; o.textContent=(d.default?"★ ":"")+d.name; sel.appendChild(o); }
 }
-$("sourceType").addEventListener("change", renderDevices);
+$("sourceType").addEventListener("change", ()=>{ if(metering) setMetering(false); renderDevices(); });
+$("device").addEventListener("change", ()=>{ if(metering) setMetering(false); });
 
 // ---- websocket ----
 function connect(){
@@ -294,7 +312,9 @@ function connect(){
 }
 function send(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(o)); }
 function setRunning(on){ running=on; $("startBtn").disabled=on; $("stopBtn").disabled=!on;
-  $("sourceType").disabled=on; $("device").disabled=on; $("budget").disabled=on; }
+  $("sourceType").disabled=on; $("device").disabled=on; $("budget").disabled=on;
+  $("audioTestBtn").disabled=on;
+  if(on && metering) setMetering(false); }
 
 $("startBtn").onclick=()=>{ const f=$("feed"); if(f.querySelector(".empty")) f.innerHTML="";
   send({action:"start", source:$("sourceType").value, device_id:$("device").value, file_path:$("filePath").value, budget_usd:parseFloat($("budget").value)||0}); setRunning(true); };
@@ -312,6 +332,8 @@ function handle(m){
     case "verdict": updateVerdict(m); break;
     case "stats": updateStats(m); break;
     case "spend": renderSpend(m); break;
+    case "level": onLevel(m); break;
+    case "level_status": onLevelStatus(m); break;
     case "saved": m.error?toast("Save failed: "+m.error):toast("Saved: "+m.docx.split(/[\\/]/).pop()+" + .xlsx"); break;
   }
 }
@@ -352,6 +374,51 @@ function updateStats(s){
   $("cSearch").textContent=s.web_searches||0;
   const t=(s.input_tokens||0)+(s.output_tokens||0); $("cTok").textContent=t>=1000?(t/1000).toFixed(1)+"k":t;
 }
+
+// ---- Audio level meter ----
+let metering=false, peakHold=0;
+function dbToPct(db){ return Math.max(0, Math.min(100, (db+60)/60*100)); }
+function onLevel(m){
+  $("lvlFill").style.width = dbToPct(m.db) + "%";
+  const ppct = dbToPct(20*Math.log10((m.peak||0)+1e-9));
+  peakHold = Math.max(peakHold*0.9, ppct);
+  $("lvlPeak").style.left = peakHold + "%";
+  $("lvlDb").textContent = (m.db<=-60 ? "−∞" : m.db.toFixed(0)) + " dBFS";
+}
+function onLevelStatus(m){
+  if(m.state==="on"){ metering=true; $("audioTestBtn").textContent="Stop test"; $("audioTestBtn").classList.add("primary"); }
+  else { metering=false; $("audioTestBtn").textContent="Test audio"; $("audioTestBtn").classList.remove("primary");
+         $("lvlFill").style.width="0%"; peakHold=0; $("lvlPeak").style.left="0%"; }
+  if(m.state==="error"){ toast(m.message||"Audio test failed"); $("lvlDb").textContent="—"; }
+}
+function setMetering(on){
+  if(on){ send({action:"level_start", source:$("sourceType").value, device_id:$("device").value}); }
+  else { send({action:"level_stop"}); metering=false; $("audioTestBtn").textContent="Test audio"; $("audioTestBtn").classList.remove("primary"); }
+}
+$("audioTestBtn").onclick=()=>setMetering(!metering);
+
+// ---- API connection test ----
+async function testApi(btnId, outId){
+  const btn=$(btnId), out=$(outId);
+  btn.disabled=true; const label=btn.textContent; btn.textContent="Testing…";
+  out.innerHTML=`<span class="ln">Pinging Anthropic… (classifier ping + one live web search)</span>`;
+  try{
+    const r=await(await fetch("/api/test/anthropic",{method:"POST"})).json();
+    if(r.message && !r.classifier){ out.innerHTML=`<span class="ln bad">✘ ${esc(r.message)}</span>`; return; }
+    const c=r.classifier||{}, j=r.judge||{};
+    let h="";
+    h+=`<span class="ln ${c.ok?"ok":"bad"}">${c.ok?"✔":"✘"} Key + model <b>${esc(c.model||"")}</b>`+
+       (c.ok?` — ${c.latency_ms} ms`:` — ${esc(c.error||"failed")}`)+`</span>`;
+    h+=`<span class="ln ${j.ok?"ok":"bad"}">${j.ok?"✔":"✘"} Judge <b>${esc(j.model||"")}</b> + web search`+
+       (j.ok?` — ${j.latency_ms} ms, ${j.searched} search${j.searched===1?"":"es"}`:` — ${esc(j.error||"failed")}`)+`</span>`;
+    if(j.ok && j.reply) h+=`<span class="ln reply">“${esc(j.reply)}”</span>`;
+    h+=`<span class="ln">Key source: ${esc(r.key_source||"?")}</span>`;
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML=`<span class="ln bad">✘ ${esc(String(e))}</span>`; }
+  finally{ btn.disabled=false; btn.textContent=label; }
+}
+$("apiTestBtn").onclick=()=>testApi("apiTestBtn","apiTestOut");
+$("apiTestBtnLive").onclick=()=>testApi("apiTestBtnLive","apiTestOutLive");
 
 // ---- Settings + API ----
 const PRICE_MODELS=["claude-sonnet-5","claude-opus-4-8","claude-haiku-4-5-20251001"];
