@@ -182,7 +182,12 @@ per-session budget in the UI (prices in `config.model_prices`, marked estimates)
 
 Still open:
 - **PyInstaller `.exe`** packaging (the one Phase 1 to-do).
-- **Speaker diarization** (who-said-what) — single-stream transcript for now.
+- **Speaker diarization** (automatic who-said-what) — still single-stream. A *manual*
+  fixed speaker label now exists (Live tab → Speaker label, threaded through
+  `Utterance.speaker` into the feed + exports), which covers single-speaker/news; true
+  multi-speaker diarization for debates is the remaining piece.
+- **Listening modes** (`server/app.py:_MODE_PROFILES`) tune VAD segmentation per content
+  type (debate/news/speaker/podcast). Tune there if segments come out choppy for a mode.
 - **Streaming Whisper tuning** — `vad_*` knobs in `config.py` control segment
   boundaries; if live segments come out too choppy or too laggy, tune there first.
 

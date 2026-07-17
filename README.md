@@ -12,8 +12,12 @@ calibrated, cited verdict — GREEN / RED / YELLOW / GREY. Exports the full log 
 **Phase 1** is the live desktop app (`run_gui.py` / the packaged `GroundTruth.exe`) —
 a local web UI with four tabs:
 
-- **Live** — pick a source (system audio, mic, or a `.wav`), press Start, watch claims
-  appear grey and flip color as each fact-check returns; click one for reasoning + sources.
+- **Live** — pick a source (system audio, mic, or a `.wav`) and a **listening mode**
+  (debate / news / single speaker / podcast), optionally set a **speaker label**, then
+  press Start. Claims appear grey and flip color as each fact-check returns; click one
+  for reasoning + sources. Works the same for a debate, a newscast, or one person talking —
+  the mode just tunes how audio is segmented, and a hallucination guard keeps music/applause
+  in continuous audio from becoming false claims.
 - **Settings** — audio/VAD, Whisper model + GPU, verdict threshold, concurrency, budget.
 - **API** — Anthropic key (stored locally, never in git), judge/classifier models, web-search
   version, editable price table, and the credible-source allowlist.
