@@ -16,9 +16,13 @@ from PyInstaller.utils.hooks import collect_all
 # project root (the parent of this build/ dir). SPECPATH is injected by PyInstaller.
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
 
-datas = [(os.path.join(ROOT, "server", "static"), "server/static")]
+datas = [
+    (os.path.join(ROOT, "server", "static"), "server/static"),
+    (os.path.join(ROOT, "assets"), "assets"),
+]
 binaries = []
 hiddenimports = []
+ICON = os.path.join(ROOT, "assets", "groundtruth.ico")
 
 # Packages with data files / native libs / dynamic imports PyInstaller can miss.
 for pkg in ("faster_whisper", "ctranslate2", "soundcard", "uvicorn", "anthropic", "cffi"):
@@ -49,6 +53,7 @@ exe = EXE(
     name="GroundTruth",
     console=True,          # the console doubles as a log; closing it quits the app
     disable_windowed_traceback=False,
+    icon=ICON,
 )
 coll = COLLECT(
     exe, a.binaries, a.datas,

@@ -19,7 +19,7 @@
 #define AppExe "GroundTruth.exe"
 
 [Setup]
-AppId={{7C3A6D2E-9B41-4F5A-A0D1-GROUNDTRUTH01}
+AppId={{A7E3C1B2-4D5F-4A6B-9C8D-1E2F3A4B5C6D}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -28,6 +28,7 @@ DefaultGroupName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 OutputDir=Output
 OutputBaseFilename={#AppName}-Setup
+SetupIconFile=..\assets\groundtruth.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

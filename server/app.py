@@ -49,9 +49,12 @@ _MODE_PROFILES = {
 
 # Static assets: bundled next to the code, or under _MEIPASS when frozen by PyInstaller.
 if getattr(sys, "frozen", False):
-    _STATIC = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "server" / "static"
+    _BUNDLE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    _STATIC = _BUNDLE / "server" / "static"
+    _ASSETS = _BUNDLE / "assets"
 else:
     _STATIC = Path(__file__).parent / "static"
+    _ASSETS = Path(__file__).parent.parent / "assets"
 
 # Overlay any settings saved through the UI onto the live config at startup.
 store.apply_settings_to_config(config, store.load_settings())
@@ -328,6 +331,14 @@ class Session:
 @app.get("/")
 def index():
     return FileResponse(_STATIC / "index.html")
+
+
+@app.get("/favicon.ico")
+def favicon():
+    ico = _ASSETS / "groundtruth.ico"
+    if ico.exists():
+        return FileResponse(ico)
+    return JSONResponse({}, status_code=404)
 
 
 @app.get("/api/devices")
