@@ -25,7 +25,10 @@ hiddenimports = []
 ICON = os.path.join(ROOT, "assets", "groundtruth.ico")
 
 # Packages with data files / native libs / dynamic imports PyInstaller can miss.
-for pkg in ("faster_whisper", "ctranslate2", "soundcard", "uvicorn", "anthropic", "cffi"):
+# huggingface_hub + certifi are needed so faster-whisper can DOWNLOAD the model on
+# first run (missing them makes Start fail fast, which looks like 'stops on its own').
+for pkg in ("faster_whisper", "ctranslate2", "soundcard", "uvicorn", "anthropic",
+            "cffi", "huggingface_hub", "certifi", "tokenizers"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

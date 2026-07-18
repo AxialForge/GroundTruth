@@ -40,9 +40,8 @@ class FasterWhisperSTT(STTEngine):
                 "or use stt_engine='transcript_file' to test without audio."
             ) from e
 
-        model = WhisperModel(
-            self.model_size, device=self.device, compute_type=self.compute_type
-        )
+        from .base import load_whisper_model
+        model = load_whisper_model(WhisperModel, self.model_size, self.device, self.compute_type)
         # vad_filter trims silence => fewer empty/garbage utterances.
         segments, _info = model.transcribe(
             self.wav_path,

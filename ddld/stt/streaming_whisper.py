@@ -29,7 +29,7 @@ import numpy as np
 
 from ..audio.base import AudioCapture
 from ..types import Utterance
-from .base import STTEngine
+from .base import STTEngine, load_whisper_model
 
 _FRAME_MS = 30  # webrtcvad accepts only 10 / 20 / 30 ms frames
 
@@ -110,7 +110,7 @@ class StreamingWhisperSTT(STTEngine):
                 "Live STT needs faster-whisper. `pip install faster-whisper`."
             ) from e
 
-        model = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type)
+        model = load_whisper_model(WhisperModel, self.model_size, self.device, self.compute_type)
         is_speech_gate = _make_speech_gate(self.vad_aggressiveness, self.sample_rate)
 
         frame_len = int(self.sample_rate * _FRAME_MS / 1000)   # 480 samples @ 16 kHz

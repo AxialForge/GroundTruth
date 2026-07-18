@@ -231,10 +231,13 @@ class Session:
         self._thread.start()
 
     def _run(self, cache: ClaimCache) -> None:
+        err = None
         try:
             self._pipe.run()
         except Exception as e:  # pragma: no cover
-            self._emit({"type": "status", "state": "error", "message": f"Pipeline error: {e}"})
+            import traceback
+            traceback.print_exc()  # full trace to the server console/log
+            err = str(e) or e.__class__.__name__
         finally:
             try:
                 cache.flush()
@@ -244,7 +247,12 @@ class Session:
             self._running = False
             self._emit(self._stats())
             self._emit({"type": "spend", **SPEND.summary()})
-            self._emit({"type": "status", "state": "stopped", "message": "Stopped."})
+            # Carry the error into the terminal status so it isn't overwritten by a
+            # bland "Stopped." A premature self-stop is almost always an error here.
+            if err:
+                self._emit({"type": "status", "state": "error", "message": f"Stopped — {err}"})
+            else:
+                self._emit({"type": "status", "state": "stopped", "message": "Stopped."})
 
     def _persist_spend(self) -> None:
         if not self._meter or not self._pipe:
