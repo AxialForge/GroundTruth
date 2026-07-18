@@ -125,8 +125,35 @@ class StreamingWhisperSTT(STTEngine):
         seg_start = 0.0
         clock = 0.0                                # seconds of audio consumed so far
 
-        for block in self.capture.frames():
-            if block is None or len(block) == 0:
+        # Decouple the sound-card reader from VAD + transcription. Whisper on CPU
+        # blocks for a second or more per segment; if that ran on the capture
+        # thread the WASAPI recorder would overrun and drop audio ('data
+        # discontinuity'). A producer thread keeps draining the card into a queue
+        # so no audio is lost while we transcribe; the queue absorbs the burst.
+        import queue as _queue
+        import threading as _threading
+
+        q: "_queue.Queue" = _queue.Queue()
+
+        def _producer():
+            try:
+                for blk in self.capture.frames():
+                    q.put(blk)
+            except Exception as exc:  # surface capture errors to the consumer
+                q.put(("__error__", exc))
+            finally:
+                q.put(None)
+
+        producer = _threading.Thread(target=_producer, name="audio-capture", daemon=True)
+        producer.start()
+
+        while True:
+            block = q.get()
+            if block is None:
+                break
+            if isinstance(block, tuple) and len(block) == 2 and block[0] == "__error__":
+                raise block[1]
+            if len(block) == 0:
                 continue
             pending = np.concatenate((pending, block)) if pending.size else block
 

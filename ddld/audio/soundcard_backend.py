@@ -16,11 +16,17 @@ Whisper wants, so there's no dtype conversion on the hot path.
 from __future__ import annotations
 
 import sys
+import warnings
 from typing import Iterator
 
 import numpy as np
 
 from .base import AudioCapture
+
+# WASAPI loopback flags occasional 'data discontinuity' when a block is dropped.
+# It's non-fatal noise; the producer/consumer buffer in the STT layer minimizes
+# real dropouts, so keep the console clean.
+warnings.filterwarnings("ignore", message="data discontinuity in recording")
 
 _BLOCK_SECONDS = 0.1  # record ~100 ms at a time; the STT layer re-frames to 30 ms for VAD
 
