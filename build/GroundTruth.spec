@@ -34,6 +34,19 @@ for pkg in ("faster_whisper", "ctranslate2", "soundcard", "uvicorn", "anthropic"
     binaries += b
     hiddenimports += h
 
+# CUDA runtime DLLs (from the nvidia-*-cu12 wheels) for GPU transcription. Placed
+# at the bundle root (_internal) so setup_cuda_dll_path() — which adds _MEIPASS to
+# PATH — lets ctranslate2 load cuBLAS/cuDNN. Adds ~1.3 GB; on a machine without a
+# GPU they're simply unused (the app falls back to CPU). No-op if not installed.
+import glob as _glob
+try:
+    import nvidia
+    for _root in list(getattr(nvidia, "__path__", [])):
+        for _dll in _glob.glob(os.path.join(_root, "*", "bin", "*.dll")):
+            binaries.append((_dll, "."))
+except Exception:
+    pass
+
 a = Analysis(
     [os.path.join(ROOT, "groundtruth_app.py")],
     pathex=[ROOT],

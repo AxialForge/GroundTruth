@@ -6,10 +6,53 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from abc import ABC, abstractmethod
 from typing import Iterator
 
 from ..types import Utterance
+
+
+_CUDA_PATH_DONE = False
+
+
+def setup_cuda_dll_path() -> None:
+    """Put the CUDA runtime DLLs on PATH so ctranslate2 can use the GPU.
+
+    ctranslate2 loads cublas64_12.dll via a plain LoadLibrary that only honors
+    PATH (not os.add_dll_directory), and cuBLAS pulls in cudart/cudnn — so all the
+    CUDA DLLs must be reachable via PATH. In the packaged app they're bundled into
+    _internal; from source they come from the nvidia-*-cu12 pip wheels. Must run
+    BEFORE faster_whisper/ctranslate2 is imported. No GPU / no libs → harmless;
+    load_whisper_model still falls back to CPU."""
+    global _CUDA_PATH_DONE
+    if _CUDA_PATH_DONE:
+        return
+    _CUDA_PATH_DONE = True
+
+    dirs = []
+    if getattr(sys, "frozen", False):
+        base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+        dirs.append(base)                       # DLLs bundled alongside ctranslate2.dll
+        dirs.append(os.path.join(base, "cuda"))
+    else:
+        try:
+            import nvidia  # namespace package from the nvidia-*-cu12 wheels
+            for root in list(getattr(nvidia, "__path__", [])):
+                for sub in os.listdir(root):
+                    b = os.path.join(root, sub, "bin")
+                    if os.path.isdir(b):
+                        dirs.append(b)
+        except Exception:
+            pass
+
+    for d in dirs:
+        if d and os.path.isdir(d):
+            os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+            try:
+                os.add_dll_directory(d)
+            except Exception:
+                pass
 
 
 # Per-process memo of what device actually worked, so repeated Starts don't
@@ -45,6 +88,7 @@ def materialize_model(model_size: str) -> str:
         return local  # already materialized as real files
 
     os.makedirs(local, exist_ok=True)
+    setup_cuda_dll_path()
     from faster_whisper import download_model
     cache_dir = download_model(model_size)  # HF snapshot (downloads if missing); symlinked on Windows
     for name in os.listdir(cache_dir):

@@ -17,5 +17,13 @@ soundcard>=0.4.3         # mic + WASAPI system-loopback capture (Windows)
 # ships without it and uses the energy gate.
 # webrtcvad-wheels>=2.0.14
 
+# --- GPU acceleration (optional; NVIDIA only) ---
+# Provides the CUDA runtime DLLs faster-whisper/ctranslate2 need to use the GPU.
+# With these installed and Whisper device = auto/cuda, transcription runs on the
+# GPU (much faster); without them it falls back to CPU automatically.
+# nvidia-cublas-cu12
+# nvidia-cuda-runtime-cu12
+# nvidia-cudnn-cu12
+
 # --- Packaging (optional) ---
 # pyinstaller>=6.0        # build the standalone .exe from build/GroundTruth.spec

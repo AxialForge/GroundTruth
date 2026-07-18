@@ -32,6 +32,8 @@ class FasterWhisperSTT(STTEngine):
         self.speaker = speaker or None
 
     def stream(self) -> Iterator[Utterance]:
+        from .base import setup_cuda_dll_path
+        setup_cuda_dll_path()  # must precede the ctranslate2 import for GPU to load
         try:
             from faster_whisper import WhisperModel
         except ImportError as e:  # pragma: no cover
