@@ -4,6 +4,8 @@ STT engine interface. Everything the pipeline needs from speech-to-text is
 """
 from __future__ import annotations
 
+import os
+import shutil
 from abc import ABC, abstractmethod
 from typing import Iterator
 
@@ -12,8 +14,49 @@ from ..types import Utterance
 
 # Per-process memo of what device actually worked, so repeated Starts don't
 # re-probe a GPU we already know can't run inference (and don't load the model
-# twice each time, which widens the cache race below).
+# twice each time).
 _RESOLVED_DEVICE: dict = {}
+
+
+def _app_model_root() -> str:
+    base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    root = (os.path.join(base, "GroundTruth", "models") if os.environ.get("APPDATA")
+            else os.path.join(base, ".groundtruth", "models"))
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def materialize_model(model_size: str) -> str:
+    """Return a directory holding the faster-whisper model as REAL FILES.
+
+    The HuggingFace cache stores model.bin as a Windows symlink into blobs/, and
+    the packaged app's CTranslate2 can't open that symlink ('Unable to open file
+    model.bin') even though the same call works from a normal Python run. We
+    resolve the symlinks ONCE into GroundTruth's own data dir (reusing the already
+    downloaded blob — no re-download), and load plain files from there.
+
+    If `model_size` is already a path to a real model dir, it's returned as-is."""
+    if os.path.isdir(model_size) and os.path.isfile(os.path.join(model_size, "model.bin")):
+        return model_size
+
+    local = os.path.join(_app_model_root(), f"faster-whisper-{model_size}")
+    binp = os.path.join(local, "model.bin")
+    if os.path.isfile(binp) and not os.path.islink(binp) and os.path.getsize(binp) > 1_000_000:
+        return local  # already materialized as real files
+
+    os.makedirs(local, exist_ok=True)
+    from faster_whisper import download_model
+    cache_dir = download_model(model_size)  # HF snapshot (downloads if missing); symlinked on Windows
+    for name in os.listdir(cache_dir):
+        src = os.path.join(cache_dir, name)
+        if os.path.isdir(src):
+            continue
+        real = os.path.realpath(src)  # resolve the symlink to the actual blob
+        dst = os.path.join(local, name)
+        tmp = dst + ".part"
+        shutil.copyfile(real, tmp)
+        os.replace(tmp, dst)  # atomic swap into place
+    return local
 
 
 def load_whisper_model(WhisperModel, model_size: str, device: str, compute_type: str):
@@ -27,35 +70,26 @@ def load_whisper_model(WhisperModel, model_size: str, device: str, compute_type:
       * Transient 'Unable to open file model.bin' — HuggingFace re-links the
         snapshot on load, and CTranslate2 can catch model.bin mid-relink. We
         retry a few times with a short pause."""
-    import time
     import numpy as np
 
+    # Real, symlink-free model path — the fix for the packaged app's
+    # 'Unable to open file model.bin'.
+    model_path = materialize_model(model_size)
+
     def _build(dev: str, ct: str):
-        model = WhisperModel(model_size, device=dev, compute_type=ct)
+        model = WhisperModel(model_path, device=dev, compute_type=ct)
         segments, _info = model.transcribe(np.zeros(16000, dtype=np.float32), beam_size=1)
         for _ in segments:
             break
         return model
 
-    def _build_retry(dev: str, ct: str, attempts: int = 4):
-        for i in range(attempts):
-            try:
-                return _build(dev, ct)
-            except Exception as e:
-                transient = "model.bin" in str(e) or "Unable to open file" in str(e)
-                if transient and i < attempts - 1:
-                    print(f"[stt] model files busy (HF cache relink); retry {i + 1}…")
-                    time.sleep(0.8)
-                    continue
-                raise
-
-    key = (model_size, (device or "").lower(), (compute_type or "").lower())
+    key = (model_path, (device or "").lower(), (compute_type or "").lower())
     resolved = _RESOLVED_DEVICE.get(key)
     if resolved:
-        return _build_retry(*resolved)
+        return _build(*resolved)
 
     try:
-        model = _build_retry(device, compute_type)
+        model = _build(device, compute_type)
         _RESOLVED_DEVICE[key] = (device, compute_type)
         return model
     except Exception as e:
@@ -63,7 +97,7 @@ def load_whisper_model(WhisperModel, model_size: str, device: str, compute_type:
             raise
         print(f"[stt] Whisper on device={device!r} can't run ({type(e).__name__}: {e}); "
               f"falling back to CPU. (Set device=cpu in Settings to skip this probe.)")
-        model = _build_retry("cpu", "int8")
+        model = _build("cpu", "int8")
         _RESOLVED_DEVICE[key] = ("cpu", "int8")
         return model
 
