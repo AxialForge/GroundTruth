@@ -49,13 +49,22 @@ def materialize_model(model_size: str) -> str:
     cache_dir = download_model(model_size)  # HF snapshot (downloads if missing); symlinked on Windows
     for name in os.listdir(cache_dir):
         src = os.path.join(cache_dir, name)
-        if os.path.isdir(src):
-            continue
-        real = os.path.realpath(src)  # resolve the symlink to the actual blob
+        # Resolve the blob WITHOUT traversing the symlink: os.path.realpath (and
+        # CTranslate2's open, and os.path.isdir/isfile which stat-follow) raise
+        # WinError 448 'untrusted mount point' on the HF symlinks in the packaged
+        # app. os.readlink reads the reparse target string without traversing.
+        if os.path.islink(src):
+            target = os.readlink(src)                       # e.g. '..\\..\\blobs\\<sha>'
+            blob = target if os.path.isabs(target) else os.path.normpath(
+                os.path.join(os.path.dirname(src), target))
+        elif os.path.isfile(src):
+            blob = src                                       # already a real file
+        else:
+            continue                                         # a real subdirectory
         dst = os.path.join(local, name)
         tmp = dst + ".part"
-        shutil.copyfile(real, tmp)
-        os.replace(tmp, dst)  # atomic swap into place
+        shutil.copyfile(blob, tmp)                           # blob is a plain file — safe to open
+        os.replace(tmp, dst)                                 # atomic swap into place
     return local
 
 

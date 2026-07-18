@@ -14,7 +14,7 @@
   #define SourceDir "..\dist\GroundTruth"
 #endif
 #define AppName "GroundTruth"
-#define AppVersion "1.0.6"
+#define AppVersion "1.0.7"
 #define AppPublisher "AxialForge"
 #define AppExe "GroundTruth.exe"
 
