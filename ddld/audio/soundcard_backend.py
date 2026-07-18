@@ -15,6 +15,7 @@ Whisper wants, so there's no dtype conversion on the hot path.
 """
 from __future__ import annotations
 
+import sys
 from typing import Iterator
 
 import numpy as np
@@ -22,6 +23,25 @@ import numpy as np
 from .base import AudioCapture
 
 _BLOCK_SECONDS = 0.1  # record ~100 ms at a time; the STT layer re-frames to 30 ms for VAD
+
+
+def _ensure_com() -> None:
+    """soundcard drives WASAPI through COM, which must be initialized on the
+    thread that records. soundcard inits COM once, on the thread that first
+    imports it; a background capture thread (the level meter and the pipeline
+    both run on one) otherwise gets 0x800401f0 (CO_E_NOTINITIALIZED).
+
+    IMPORTANT: only call this AFTER soundcard is imported. Calling it earlier
+    makes soundcard's own CoInitializeEx return S_FALSE, which its _COMLibrary
+    mis-treats as an error. We use the same apartment soundcard does (MTA, no
+    message pump needed for a worker thread) and swallow S_FALSE ourselves."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.ole32.CoInitializeEx(None, 0x0)  # COINIT_MULTITHREADED; S_FALSE if already up
+    except Exception:
+        pass
 
 
 def _import_soundcard():
@@ -54,6 +74,7 @@ class LoopbackCapture(AudioCapture):
 
     def frames(self) -> Iterator[np.ndarray]:
         sc = _import_soundcard()
+        _ensure_com()  # capture thread: init COM after soundcard is imported
         speaker = sc.default_speaker() if not self._device_id else sc.get_speaker(self._device_id)
         if speaker is None:
             raise RuntimeError(f"No speaker found for loopback (device_id={self._device_id!r}).")
@@ -71,6 +92,7 @@ class MicrophoneCapture(AudioCapture):
 
     def frames(self) -> Iterator[np.ndarray]:
         sc = _import_soundcard()
+        _ensure_com()  # capture thread: init COM after soundcard is imported
         mic = sc.default_microphone() if not self._device_id else sc.get_microphone(self._device_id)
         if mic is None:
             raise RuntimeError(f"No microphone found (device_id={self._device_id!r}).")
@@ -84,6 +106,7 @@ def list_devices() -> dict:
         sc = _import_soundcard()
     except RuntimeError as e:
         return {"loopback": [], "mic": [], "error": str(e)}
+    _ensure_com()  # enumeration can land on any threadpool thread
 
     def _default_id(dev):
         return getattr(dev, "id", "") if dev else ""
